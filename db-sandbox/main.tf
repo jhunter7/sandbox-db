@@ -19,16 +19,16 @@ variable "app_env" {
 }
 
 variable "app_id" {
-  default = "archimedes"
+  default = "db"
 }
 
 # Data Section
 data "aws_db_instance" "primary" {
-  db_instance_identifier = "archimedes-production"
+  db_instance_identifier = "dbsandbox-production"
 }
 
 data "aws_db_instance" "replica" {
-  db_instance_identifier = "archimedes-production-replica-c"
+  db_instance_identifier = "dbsandbox-production-replica-c"
 }
 
 data "aws_ami" "web" {
@@ -37,14 +37,14 @@ data "aws_ami" "web" {
 
   filter {
     name   = "name"
-    values = ["production-archimedes-web-*"]
+    values = ["production-dbsandbox-web-*"]
   }
 }
 
 data "aws_instance" "web" {
   filter {
     name   = "tag:Name"
-    values = ["production-archimedes-web-1"]
+    values = ["production-dbsandbox-web-1"]
   }
 }
 
@@ -63,10 +63,10 @@ data "aws_security_group" "influxdb" {
   }
 }
 
-data "aws_security_group" "archimedes_production" {
+data "aws_security_group" "dbsandbox_production" {
   filter {
     name   = "group-name"
-    values = ["archimedes-production-APtRQgLYQZk"]
+    values = ["db-production-APtRQgLYQZk"]
   }
 }
 
@@ -77,40 +77,40 @@ data "aws_security_group" "production_telegraf" {
   }
 }
 
-data "aws_security_group" "archimedes_production_lb" {
+data "aws_security_group" "db_production_lb" {
   filter {
     name   = "group-name"
-    values = ["archimedes-production-lb"]
+    values = ["db-production-lb"]
   }
 }
 
 
 
-# copy from archimedes_production
-resource "aws_security_group" "archimedes_sandbox" {
-  name        = "archimedes-sandbox-${terraform.workspace}"
+# copy from db_production
+resource "aws_security_group" "db_sandbox" {
+  name        = "db-sandbox-${terraform.workspace}"
   description = "Security Group for sandbox instances"
-  vpc_id      = data.aws_security_group.archimedes_production.vpc_id
+  vpc_id      = data.aws_security_group.db_production.vpc_id
   ingress {
     description     = "HTTPS"
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
-    security_groups = [data.aws_security_group.production_telegraf.id, data.aws_security_group.archimedes_production_lb.id]
+    security_groups = [data.aws_security_group.production_telegraf.id, data.aws_security_group.db_production_lb.id]
   }
   tags = {
     "app:role"    = "sandbox"
     "app:cluster" = "production"
-    "app:id"      = "archimedes"
+    "app:id"      = "db"
     "app:env"     = "production"
   }
 }
 
 
-resource "aws_security_group" "archimedes_sandbox_postgresql" {
-  name        = "archimedes-sandbox-postgresql-${terraform.workspace}"
+resource "aws_security_group" "db_sandbox_postgresql" {
+  name        = "db-sandbox-postgresql-${terraform.workspace}"
   description = "SG for sandbox db access"
-  vpc_id      = data.aws_security_group.archimedes_production.vpc_id
+  vpc_id      = data.aws_security_group.db_production.vpc_id
 
   ingress {
     description     = "Solarwinds DPM"
@@ -120,11 +120,11 @@ resource "aws_security_group" "archimedes_sandbox_postgresql" {
     security_groups = [data.aws_security_group.solarwinds.id]
   }
   ingress {
-    description     = "Archimedes Sandbox "
+    description     = "db Sandbox "
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = [aws_security_group.archimedes_sandbox.id]
+    security_groups = [aws_security_group.db_sandbox.id]
   }
   ingress {
     description     = "Telegraf / InfluxDB"
@@ -144,7 +144,7 @@ resource "aws_security_group" "archimedes_sandbox_postgresql" {
   tags = {
     "app:role"    = "sandbox"
     "app:cluster" = "production"
-    "app:id"      = "archimedes"
+    "app:id"      = "db"
     "app:env"     = "production"
   }
 }
@@ -158,8 +158,8 @@ resource "aws_db_instance" "sandbox" {
   option_group_name    = data.aws_db_instance.primary.option_group_memberships[0]
   db_subnet_group_name = data.aws_db_instance.primary.db_subnet_group
   vpc_security_group_ids = setunion(data.aws_db_instance.primary.vpc_security_groups,
-    [aws_security_group.archimedes_sandbox_postgresql.id,
-  aws_security_group.archimedes_sandbox.id])
+    [aws_security_group.db_sandbox_postgresql.id,
+  aws_security_group.db_sandbox.id])
   iops                        = 10000
   publicly_accessible         = false
   multi_az                    = false
@@ -186,8 +186,8 @@ resource "aws_instance" "sandbox" {
   # key_name                    = data.aws_instance.web.key_name
   key_name                    = var.sandbox_key_name
   subnet_id                   = data.aws_instance.web.subnet_id
-  vpc_security_group_ids = setunion(setsubtract(data.aws_instance.web.vpc_security_group_ids, [data.aws_security_group.archimedes_production.id]),
-  [aws_security_group.archimedes_sandbox.id])
+  vpc_security_group_ids = setunion(setsubtract(data.aws_instance.web.vpc_security_group_ids, [data.aws_security_group.db_production.id]),
+  [aws_security_group.db_sandbox.id])
   tags = {
     Name          = join("-", [var.app_env, var.app_id, "sandbox", terraform.workspace])
     "app:env"     = var.app_env
@@ -201,14 +201,14 @@ resource "aws_instance" "sandbox" {
 
     sudo systemctl stop puma sidekiq sneakers que
     sudo systemctl disable puma sidekiq sneakers que
-    sudo rm /opt/archimedes/shared/.env.bak
+    sudo rm /opt/db/shared/.env.bak
     sudo -u deploy sed \
       -i.bak \
       -e 's/${data.aws_db_instance.primary.address}/${aws_db_instance.sandbox.address}/g' \
       -e 's/${data.aws_db_instance.replica.address}/${aws_db_instance.sandbox.address}/g' \
       -e '/REDIS/d' \
       -e '/MANDRILL/d' \
-      /opt/archimedes/shared/.env
+      /opt/db/shared/.env
   EOS
 }
 
