@@ -3,7 +3,7 @@ terraform {
   backend "s3" {
     bucket = "BUCKET_NAME"
     region = "us-west-2"
-    key    = "tf-project-production-archimedes-db-sandbox/state"
+    key    = "tf-project"
   }
 }
 
