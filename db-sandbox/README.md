@@ -1,9 +1,8 @@
-# tf-project-production-archimedes-db-sandbox
+# tf-project-db-sandbox
 
 This is a Terraform project that will create a copy of the primary database
 using a point in time restore. Then it will create another rails server using
-the web server ami for Archimedes. When the server comes up all Archimedes
-services will be stopped and the database will be reconfigured to point at the
+the web server ami. When the server comes up all services will be stopped and the database will be reconfigured to point at the
 point in time restore. When you are done this will allow you to destroy all the
 infrastructure related to setting it up. This will also remove the redis and
 email settings for safety reasons.
